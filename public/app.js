@@ -382,11 +382,15 @@ function vendorActions(x) {
     return `<button class="btn btn-o btn-sm" data-act="review" data-arg="${x.id}" data-arg2="suspended">Block</button>
       <button class="btn btn-r btn-sm" data-act="removeVendor" data-arg="${x.id}" data-arg2="${esc(x.name)}">Remove</button>`;
   }
-  if (x.status === 'suspended') {
+ if (x.status === 'suspended') {
     return `<button class="btn btn-g btn-sm" data-act="review" data-arg="${x.id}" data-arg2="approved">Unblock</button>
       <button class="btn btn-r btn-sm" data-act="removeVendor" data-arg="${x.id}" data-arg2="${esc(x.name)}">Remove</button>`;
   }
-  return '';                                       /* already rejected/removed — nothing left to do */
+  if (x.status === 'rejected') {
+    return `<button class="btn btn-g btn-sm" data-act="review" data-arg="${x.id}" data-arg2="approved">Re-approve</button>`;
+  }
+  return '';
+}                                       /* already rejected/removed — nothing left to do */
 }
 async function addVendor() {
   const name = document.getElementById('nvName').value.trim();
