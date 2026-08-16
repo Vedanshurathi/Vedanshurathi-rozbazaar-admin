@@ -389,8 +389,7 @@ function vendorActions(x) {
   if (x.status === 'rejected') {
     return `<button class="btn btn-g btn-sm" data-act="review" data-arg="${x.id}" data-arg2="approved">Re-approve</button>`;
   }
-  return '';
-}                                       /* already rejected/removed — nothing left to do */
+ return '';
 }
 async function addVendor() {
   const name = document.getElementById('nvName').value.trim();
