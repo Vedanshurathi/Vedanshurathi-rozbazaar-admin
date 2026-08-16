@@ -15,6 +15,80 @@ const when = d => {
   if (m < 1440) return Math.round(m / 60) + 'h ago';
   return Math.round(m / 1440) + 'd ago';
 };
+/* ============================================================
+   Real SVG chart rendering — smooth animated line(s), gradient
+   fill, hover tooltips. No chart library: this is ~60 lines of
+   plain SVG path math, which keeps the whole admin dependency-free.
+   ============================================================ */
+let chartSeq = 0;
+function svgChart(points, opts) {
+  opts = opts || {};
+  const W = 900, H = opts.h || 220, PAD = 28, PADB = 26;
+  const id = 'c' + (chartSeq++);
+  const series = opts.series || [{ key: 'v', color: 'var(--g-lt)', fillTop: 'rgba(74,222,128,.32)', fillBot: 'rgba(74,222,128,0)' }];
+  const n = points.length || 1;
+  const allVals = points.flatMap(p => series.map(s => Number(p[s.key]) || 0));
+  const max = Math.max(1, ...allVals);
+  const x = i => PAD + (i / Math.max(1, n - 1)) * (W - PAD * 2);
+  const y = v => H - PADB - (v / max) * (H - PADB - 14);
+
+  const pathFor = key => points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(Number(p[key]) || 0).toFixed(1)}`).join(' ');
+  const areaFor = key => `${pathFor(key)} L ${x(n - 1).toFixed(1)} ${H - PADB} L ${x(0).toFixed(1)} ${H - PADB} Z`;
+
+  let svg = `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" id="${id}" preserveAspectRatio="none" style="height:${H}px">`;
+  series.forEach((s, si) => {
+    if (s.fillTop) {
+      svg += `<defs><linearGradient id="${id}f${si}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${s.fillTop}"/><stop offset="1" stop-color="${s.fillBot}"/></linearGradient></defs>`;
+      svg += `<path class="chart-area" d="${areaFor(s.key)}" fill="url(#${id}f${si})"/>`;
+    }
+  });
+  series.forEach(s => {
+    const d = pathFor(s.key);
+    const len = d.length * 1.6;
+    svg += `<path class="chart-line" d="${d}" stroke="${s.color}"
+      style="stroke-dasharray:${len};stroke-dashoffset:${len};animation:drawIn 1.1s var(--ez2) ${opts.delay || 0}s forwards"/>`;
+  });
+  points.forEach((p, i) => {
+    series.forEach(s => {
+      const cy = y(Number(p[s.key]) || 0);
+      svg += `<circle class="chart-dot" cx="${x(i).toFixed(1)}" cy="${cy.toFixed(1)}" r="3.5"
+        style="stroke:${s.color};animation:popIn .3s var(--sp) ${(opts.delay || 0) + i * 0.03}s both"/>`;
+    });
+    if (i % Math.ceil(n / 7) === 0 || i === n - 1) {
+      svg += `<text class="chart-axis" x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(p.label || '')}</text>`;
+    }
+    const tipLines = series.map(s => `${s.name || s.key}: ${opts.fmt ? opts.fmt(p[s.key]) : p[s.key]}`).join('|');
+    svg += `<rect class="chart-hit" data-tip="${esc(p.label || '')}||${esc(tipLines)}"
+      x="${(x(i) - (W / n) / 2).toFixed(1)}" y="0" width="${(W / n).toFixed(1)}" height="${H}"/>`;
+  });
+  svg += `</svg>`;
+  return `<div class="chart-wrap" data-chart="${id}">${svg}<div class="chart-tip" id="${id}tip"></div></div>`;
+}
+(function injectDrawInKeyframe(){
+  const s = document.createElement('style');
+  s.textContent = '@keyframes drawIn{to{stroke-dashoffset:0}}';
+  document.head.appendChild(s);
+})();
+document.addEventListener('mousemove', e => {
+  const wrap = e.target.closest('[data-chart]');
+  if (!wrap) return;
+  const hit = e.target.closest('.chart-hit');
+  const tip = wrap.querySelector('.chart-tip');
+  if (!hit || !tip) { if (tip) tip.classList.remove('show'); return; }
+  const [label, lines] = (hit.dataset.tip || '').split('||');
+  tip.innerHTML = `<b>${esc(label)}</b><br>${(lines || '').split('|').map(esc).join('<br>')}`;
+  const r = hit.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+  tip.style.left = (r.left - wr.left + r.width / 2) + 'px';
+  tip.style.top = (r.top - wr.top) + 'px';
+  tip.classList.add('show');
+});
+document.addEventListener('mouseout', e => {
+  if (e.target.closest('[data-chart]') && !e.relatedTarget?.closest?.('[data-chart]')) {
+    document.querySelectorAll('.chart-tip.show').forEach(t => t.classList.remove('show'));
+  }
+});
+
 let tT;
 function toast(m) {
   const t = document.getElementById('toast');
@@ -121,14 +195,34 @@ function render() {
   }
   ({ home: vHome, launch: vLaunch, bookings: vBookings, vendors: vVendors,
      products: vProducts, customers: vCustomers, areas: vAreas, traffic: vTraffic }[VIEW] || vHome)();
+  animateCounts();
+}
+/* Whole numbers count up from 0 on render — a small touch, but it's
+   the difference between a dashboard that feels alive and one that
+   just appears. Money/percent strings are left alone; only clean
+   integers (data-count) animate. */
+function animateCounts() {
+  document.querySelectorAll('.nm[data-count]').forEach(el => {
+    const target = Number(el.dataset.count) || 0;
+    const dur = 700, t0 = performance.now();
+    const step = now => {
+      const p = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(target * eased).toLocaleString('en-IN');
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
 }
 const banner = () => D.source === 'mock'
   ? `<div class="banner"><b>Mock data.</b> Nothing here touches your Supabase project.
      Set <code>USE_SUPABASE=true</code> in <code>.env</code> with a service-role key to go live.</div>` : '';
 
 function kpi(lb, nm, dt, cls) {
+  const isPlainNumber = typeof nm === 'number' || /^\d+$/.test(String(nm));
   return `<div class="card kpi ${cls || ''}"><div class="lb">${lb}</div>
-    <div class="nm">${nm}</div><div class="dt">${dt || ''}</div></div>`;
+    <div class="nm"${isPlainNumber ? ` data-count="${nm}"` : ''}>${isPlainNumber ? '0' : nm}</div>
+    <div class="dt">${dt || ''}</div></div>`;
 }
 
 /* ---------- views ---------- */
@@ -169,12 +263,11 @@ function vHome() {
 
     <div class="sec"><h2>Sales, last 14 days</h2>
       <span class="r">${money(d.reduce((s, x) => s + Number(x.sales || 0), 0))} total</span></div>
-    <div class="card"><div class="bars">
-      ${d.map(x => { const v = Number(x.sales) || 0; return `<div class="b">
-        <em>${v ? money(v).replace('\u20B9', '') : ''}</em>
-        <i style="height:${Math.max(3, Math.round(v / max * 100))}%;${v ? '' : 'background:var(--line)'}"></i>
-        <span>${String(x.d).slice(8, 10)}/${String(x.d).slice(5, 7)}</span></div>`; }).join('')}
-    </div></div>
+    <div class="card">${svgChart(
+        d.map(x => ({ v: Number(x.sales) || 0, label: String(x.d).slice(8, 10) + '/' + String(x.d).slice(5, 7) })),
+        { fmt: v => money(v), series: [{ key: 'v', name: 'Sales', color: 'var(--g-lt)',
+          fillTop: 'rgba(74,222,128,.32)', fillBot: 'rgba(74,222,128,0)' }] }
+      )}</div>
 
     ${D.gaps.length ? `<div class="sec"><h2>Demand with no vendor</h2>
       <span class="r">people asking, nobody to serve them</span></div>
@@ -190,7 +283,7 @@ function vLaunch() {
   const pct = Math.round(done / r.length * 100);
   document.getElementById('v-launch').innerHTML = banner() + `
     <div class="card"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
-      <div class="ring" style="--p:${pct}"><i>${pct}%</i></div>
+    <div class="ring" style="--p:${pct}"><i>${pct}%</i></div>
       <div style="flex:1;min-width:200px">
         <div class="disp" style="font-size:20px">${done} of ${r.length} checks passing</div>
         <div style="font-size:13.5px;color:var(--tx2);margin-top:5px">
@@ -430,23 +523,17 @@ function vTraffic() {
       ${kpi('Vendor app', v.totals.vendor, 'of the last 30 days')}
     </div>
     <div class="sec"><h2>Visits, last 30 days</h2>
-      <span class="r">customer + vendor, stacked</span></div>
-    <div class="card"><div class="bars">
-      ${v.daily.map(x => {
-        const c = Number(x.customer)||0, ve = Number(x.vendor)||0, tot = c+ve;
-        const hC = Math.max(0, Math.round(c/max*100)), hV = Math.max(0, Math.round(ve/max*100));
-        return `<div class="b">
-          <em>${tot || ''}</em>
-          <div style="width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:100px">
-            <div style="width:100%;background:var(--blue);border-radius:0 0 0 0;height:${hV}%"></div>
-            <div style="width:100%;background:var(--g);border-radius:6px 6px 0 0;height:${hC}%"></div>
-          </div>
-          <span>${String(x.d).slice(8,10)}/${String(x.d).slice(5,7)}</span>
-        </div>`;
-      }).join('')}
-    </div>
+      <span class="r">customer site vs vendor app</span></div>
+    <div class="card">${svgChart(
+        v.daily.map(x => ({ c: Number(x.customer)||0, ve: Number(x.vendor)||0,
+          label: String(x.d).slice(8,10)+'/'+String(x.d).slice(5,7) })),
+        { series: [
+            { key:'c',  name:'Customer', color:'var(--g-lt)',   fillTop:'rgba(74,222,128,.28)', fillBot:'rgba(74,222,128,0)' },
+            { key:'ve', name:'Vendor',   color:'var(--blue)',   fillTop:'rgba(59,130,246,.22)', fillBot:'rgba(59,130,246,0)' }
+          ] }
+      )}
     <div class="row" style="margin-top:16px;gap:18px;font-size:12.5px;font-weight:700;color:var(--tx2)">
-      <span><span style="display:inline-block;width:10px;height:10px;background:var(--g);border-radius:3px;margin-right:6px"></span>Customer site</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--g-lt);border-radius:3px;margin-right:6px"></span>Customer site</span>
       <span><span style="display:inline-block;width:10px;height:10px;background:var(--blue);border-radius:3px;margin-right:6px"></span>Vendor app</span>
     </div></div>
     <p style="font-size:12.5px;color:var(--mut);margin-top:12px;line-height:1.6">
