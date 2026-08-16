@@ -1,187 +1,483 @@
+/* ============================================================
+   Admin UI. Talks only to this server's /api/* — never to
+   Supabase directly, so no key ever reaches the browser.
+   ============================================================ */
+let D = {}, VIEW = 'home';
 
-:root{
-  --bg:#0B1322; --bg2:#111C30; --bg3:#18263E; --line:#22334F;
-  --tx:#E8EEF7; --tx2:#93A4BE; --mut:#64758F;
-  --g:#2FA850; --g-lt:#4FD873; --g-s:rgba(47,168,80,.14);
-  --or:#F2760D; --or-s:rgba(242,118,13,.14);
-  --red:#E5484D; --red-s:rgba(229,72,77,.14);
-  --blue:#3E7BFA; --blue-s:rgba(62,123,250,.14);
-  --yel:#F5C518; --yel-s:rgba(245,197,24,.14);
-  --sh:0 2px 8px rgba(0,0,0,.28); --sh2:0 8px 28px rgba(0,0,0,.4);
-  --ui:-apple-system,'Segoe UI',Roboto,'Noto Sans',Arial,sans-serif;
-  --disp:'Baloo 2',var(--ui);
-  --sp:cubic-bezier(.34,1.56,.64,1); --ez:cubic-bezier(.22,1,.36,1);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+  c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const money = n => '\u20B9' + Number(n || 0).toLocaleString('en-IN');
+const when = d => {
+  if (!d) return '\u2014';
+  const m = Math.round((Date.now() - new Date(d)) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + 'm ago';
+  if (m < 1440) return Math.round(m / 60) + 'h ago';
+  return Math.round(m / 1440) + 'd ago';
+};
+let tT;
+function toast(m) {
+  const t = document.getElementById('toast');
+  t.textContent = m; t.classList.add('show');
+  clearTimeout(tT); tT = setTimeout(() => t.classList.remove('show'), 2400);
 }
-*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{font-family:var(--ui);background:var(--bg);color:var(--tx);min-height:100vh;
-  font-size:14.5px;-webkit-font-smoothing:antialiased}
-button,input,select,textarea{font:inherit;color:inherit;border:none;background:none;cursor:pointer}
-input,select,textarea{cursor:auto}
-::-webkit-scrollbar{width:9px;height:9px}
-::-webkit-scrollbar-track{background:var(--bg)}
-::-webkit-scrollbar-thumb{background:var(--line);border-radius:9px}
-.disp{font-family:var(--disp);font-weight:800;letter-spacing:-.3px}
-a{color:inherit;text-decoration:none}
-
-/* ---------- shell ---------- */
-.app{display:flex;min-height:100vh}
-.side{width:236px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--line);
-  padding:20px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:5px}
-.brand{display:flex;align-items:center;gap:10px;padding:2px 8px 20px}
-.brand img{width:34px;height:34px;border-radius:10px;background:#fff;padding:4px}
-.brand b{font-family:var(--disp);font-size:17px}
-.brand span{display:block;font-size:10.5px;font-weight:800;color:var(--mut);letter-spacing:1.4px}
-.nav{display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:11px;
-  font-size:14px;font-weight:700;color:var(--tx2);width:100%;text-align:left;
-  transition:background .18s,color .18s}
-.nav:hover{background:var(--bg3);color:var(--tx)}
-.nav.on{background:var(--g-s);color:var(--g-lt)}
-.nav .ic{width:20px;text-align:center;font-size:15px}
-.nav .badge{margin-left:auto;background:var(--red);color:#fff;font-size:10.5px;font-weight:800;
-  padding:2px 7px;border-radius:20px}
-.side-foot{margin-top:auto;padding-top:14px;border-top:1px solid var(--line)}
-.main{flex:1;min-width:0}
-.top{position:sticky;top:0;z-index:40;background:rgba(11,19,34,.92);backdrop-filter:blur(12px);
-  border-bottom:1px solid var(--line);padding:15px 24px;display:flex;align-items:center;gap:14px}
-.top h1{font-family:var(--disp);font-size:21px}
-.top .sub{font-size:12.5px;color:var(--mut);font-weight:600}
-.top .rt{margin-left:auto;display:flex;align-items:center;gap:10px}
-.body{padding:22px 24px 60px;max-width:1500px}
-
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:10px;
-  padding:10px 16px;font-size:13.5px;font-weight:800;transition:transform .15s var(--sp),background .18s}
-.btn:active{transform:scale(.96)}
-.btn-g{background:var(--g);color:#fff}
-.btn-g:hover{background:var(--g-lt)}
-.btn-o{border:1.5px solid var(--line);background:var(--bg2);color:var(--tx2)}
-.btn-o:hover{border-color:var(--mut);color:var(--tx)}
-.btn-r{background:var(--red-s);color:var(--red);border:1.5px solid rgba(229,72,77,.3)}
-.btn-sm{padding:7px 12px;font-size:12.5px;border-radius:9px}
-.btn:disabled{opacity:.45;pointer-events:none}
-
-/* ---------- cards ---------- */
-.grid{display:grid;gap:15px}
-.k4{grid-template-columns:repeat(4,1fr)}
-.k3{grid-template-columns:repeat(3,1fr)}
-.k2{grid-template-columns:repeat(2,1fr)}
-.card{background:var(--bg2);border:1px solid var(--line);border-radius:15px;padding:18px;
-  box-shadow:var(--sh);position:relative;overflow:hidden}
-.kpi .lb{font-size:11.5px;font-weight:800;color:var(--mut);letter-spacing:.9px;text-transform:uppercase}
-.kpi .nm{font-family:var(--disp);font-size:34px;margin-top:5px;line-height:1}
-.kpi .dt{font-size:12px;font-weight:700;color:var(--tx2);margin-top:5px}
-.kpi.warn{border-color:rgba(242,118,13,.4)}
-.kpi.warn .nm{color:var(--or)}
-.kpi.bad{border-color:rgba(229,72,77,.4)}
-.kpi.bad .nm{color:var(--red)}
-.kpi.good .nm{color:var(--g-lt)}
-.sec{display:flex;align-items:center;gap:10px;margin:26px 0 13px}
-.sec h2{font-family:var(--disp);font-size:18px}
-.sec .r{margin-left:auto;font-size:12.5px;font-weight:700;color:var(--mut)}
-
-/* ---------- table ---------- */
-.tw{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--bg2)}
-table{width:100%;border-collapse:collapse;min-width:640px}
-th{text-align:left;font-size:11px;font-weight:800;color:var(--mut);letter-spacing:.9px;
-  text-transform:uppercase;padding:12px 14px;border-bottom:1px solid var(--line);white-space:nowrap;
-  background:var(--bg3);position:sticky;top:0}
-td{padding:13px 14px;border-bottom:1px solid var(--line);font-size:13.5px;vertical-align:middle}
-tr:last-child td{border-bottom:none}
-tbody tr{transition:background .15s}
-tbody tr:hover{background:var(--bg3)}
-td b{font-weight:800}
-td .mu{color:var(--mut);font-size:12px}
-.pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;
-  padding:4px 9px;border-radius:20px;white-space:nowrap}
-.p-g{background:var(--g-s);color:var(--g-lt)}
-.p-o{background:var(--or-s);color:var(--or)}
-.p-r{background:var(--red-s);color:var(--red)}
-.p-b{background:var(--blue-s);color:var(--blue)}
-.p-y{background:var(--yel-s);color:var(--yel)}
-.p-m{background:var(--bg3);color:var(--mut)}
-
-/* ---------- readiness ---------- */
-.chk{display:flex;align-items:flex-start;gap:13px;padding:14px 0;border-bottom:1px solid var(--line)}
-.chk:last-child{border-bottom:none}
-.chk .dot{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;
-  justify-content:center;font-size:13px;font-weight:800}
-.chk.ok .dot{background:var(--g-s);color:var(--g-lt)}
-.chk.no .dot{background:var(--red-s);color:var(--red)}
-.chk.wa .dot{background:var(--or-s);color:var(--or)}
-.chk b{display:block;font-size:14.5px}
-.chk span{font-size:12.5px;color:var(--tx2);line-height:1.5}
-.chk .act{margin-left:auto;flex-shrink:0}
-.ring{--p:0;width:96px;height:96px;border-radius:50%;flex-shrink:0;
-  background:conic-gradient(var(--g-lt) calc(var(--p)*1%), var(--bg3) 0);
-  display:flex;align-items:center;justify-content:center;transition:--p .8s var(--ez)}
-.ring i{width:76px;height:76px;border-radius:50%;background:var(--bg2);display:flex;
-  align-items:center;justify-content:center;font-family:var(--disp);font-size:23px;font-style:normal}
-
-/* ---------- chart ---------- */
-.bars{display:flex;align-items:flex-end;gap:7px;height:150px}
-.bars .b{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;
-  justify-content:flex-end}
-.bars .b i{width:100%;border-radius:6px 6px 3px 3px;background:var(--g);min-height:4px;
-  transition:height .7s var(--ez);display:block}
-.bars .b span{font-size:10.5px;font-weight:700;color:var(--mut)}
-.bars .b em{font-size:10.5px;font-weight:800;font-style:normal;color:var(--tx2)}
-
-.empty{text-align:center;padding:44px 20px;color:var(--mut)}
-.empty .e{font-size:40px;opacity:.5}
-.empty b{display:block;font-family:var(--disp);font-size:16px;color:var(--tx2);margin-top:10px}
-.empty p{font-size:13px;margin-top:5px}
-.sk{background:linear-gradient(90deg,var(--bg3) 25%,#1E2F4A 37%,var(--bg3) 63%);
-  background-size:400% 100%;animation:sh 1.3s infinite;border-radius:8px;height:14px}
-@keyframes sh{0%{background-position:100% 0}100%{background-position:-100% 0}}
-.fld{width:100%;background:var(--bg3);border:1.5px solid var(--line);border-radius:10px;
-  padding:11px 13px;font-size:14px;outline:none;transition:border-color .18s}
-.fld:focus{border-color:var(--g)}
-.lb{display:block;font-size:11.5px;font-weight:800;color:var(--mut);letter-spacing:.7px;
-  text-transform:uppercase;margin-bottom:6px}
-.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(16px);
-  background:var(--bg3);border:1px solid var(--line);color:var(--tx);padding:13px 20px;
-  border-radius:30px;font-size:13.5px;font-weight:700;opacity:0;transition:all .3s var(--sp);
-  z-index:200;pointer-events:none;box-shadow:var(--sh2);max-width:90vw;text-align:center}
-.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-.scr{display:none}.scr.on{display:block;animation:in .32s var(--ez)}
-@keyframes in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-
-/* ---------- login ---------- */
-#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
-.lcard{width:100%;max-width:390px;background:var(--bg2);border:1px solid var(--line);
-  border-radius:20px;padding:30px;text-align:center;box-shadow:var(--sh2)}
-.lcard img{width:58px;height:58px;border-radius:16px;background:#fff;padding:7px;margin:0 auto 16px}
-
-/* ---------- mobile ---------- */
-@media(max-width:900px){
-  .side{position:fixed;bottom:0;left:0;right:0;top:auto;width:100%;height:auto;flex-direction:row;
-    border-right:none;border-top:1px solid var(--line);padding:8px 6px calc(8px + env(safe-area-inset-bottom));
-    z-index:60;overflow-x:auto}
-  .brand,.side-foot{display:none}
-  .nav{flex-direction:column;gap:4px;font-size:10.5px;padding:7px 6px;min-width:64px;flex:1 0 auto}
-  .side{gap:2px;scrollbar-width:none}
-  .side::-webkit-scrollbar{display:none}
-  .nav .ic{font-size:18px}
-  .nav .badge{position:absolute;top:2px;right:10px;margin:0}
-  .nav{position:relative}
-  .body{padding:16px 14px 110px}
-  .top{padding:13px 14px}
-  .top h1{font-size:18px}
-  .k4,.k3,.k2{grid-template-columns:repeat(2,1fr)}
-  .grid{gap:11px}
-  .card{padding:15px}
-  .kpi .nm{font-size:27px}
-  .bars{overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
-  .bars::-webkit-scrollbar{display:none}
-  .bars .b{flex:0 0 auto;min-width:36px}
+async function api(path, body) {
+  const res = await fetch('/api' + path, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const json = await res.json().catch(() => ({ ok: false, error: 'Bad response' }));
+  if (res.status === 401 && !path.startsWith('/login')) { showLogin(); return { ok: false, error: 'Session expired' }; }
+  return json;
 }
-@media(max-width:420px){.k4,.k3,.k2{grid-template-columns:1fr 1fr}.kpi .nm{font-size:24px}}
-@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 
-/* server-mode banner */
-.mode{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;
-  padding:4px 10px;border-radius:20px;background:var(--yel-s);color:var(--yel)}
-.mode.live{background:var(--g-s);color:var(--g-lt)}
-.banner{background:var(--yel-s);border:1px solid rgba(245,197,24,.35);border-radius:13px;
-  padding:13px 16px;font-size:13px;color:var(--tx2);line-height:1.55;margin-bottom:16px}
-.banner b{color:var(--yel)}
+/* ---------- auth ---------- */
+function showLogin() {
+  document.getElementById('login').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+async function doLogin() {
+  const pw = document.getElementById('pw').value;
+  const msg = document.getElementById('loginMsg');
+  msg.textContent = '';
+  const r = await api('/login', { password: pw });
+  if (!r.ok) { msg.textContent = r.error || 'Wrong password'; return; }
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  refresh();
+}
+async function doLogout() { await api('/logout', {}); location.reload(); }
+
+async function boot() {
+  const me = await api('/me');
+  const pill = document.getElementById('modePill');
+  pill.textContent = me.mode === 'supabase' ? 'LIVE DATA' : 'MOCK DATA';
+  pill.classList.toggle('live', me.mode === 'supabase');
+  if (me.configured === false) {
+    const msg = document.getElementById('loginMsg');
+    if (msg) msg.textContent = 'Admin login is not configured yet — set ADMIN_PASSWORD_HASH and SESSION_SECRET (see README).';
+  }
+  if (!me.ok) return showLogin();
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  refresh();
+}
+async function refresh() {
+  document.getElementById('stamp').textContent = 'loading\u2026';
+  const r = await api('/snapshot');
+  if (!r.ok) {
+    document.getElementById('stamp').textContent = 'failed';
+    document.getElementById('v-' + VIEW).innerHTML =
+      `<div class="empty"><div class="e">\u26A0\uFE0F</div><b>Could not load data</b>
+       <p>${esc(r.error || 'Unknown error')}</p>
+       <button class="btn btn-g" style="margin-top:16px" data-act="refresh">Retry</button></div>`;
+    return;
+  }
+  D = r.data;
+  const pend = D.vendors.filter(v => v.status === 'pending').length;
+  const bv = document.getElementById('bVend');
+  bv.style.display = pend ? 'inline-block' : 'none'; bv.textContent = pend;
+  const pendP = (D.pending || []).length;
+  const bp = document.getElementById('bProd');
+  if (bp) { bp.style.display = pendP ? 'inline-block' : 'none'; bp.textContent = pendP; }
+  const blocks = D.readiness.filter(x => x.state === 'no').length;
+  const bl = document.getElementById('bLaunch');
+  bl.style.display = blocks ? 'inline-block' : 'none'; bl.textContent = blocks;
+  const pill = document.getElementById('modePill');
+  pill.textContent = D.source === 'supabase' ? 'LIVE DATA' : 'MOCK DATA';
+  pill.classList.toggle('live', D.source === 'supabase');
+  document.getElementById('stamp').textContent =
+    'updated ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  render();
+}
+
+/* ---------- routing ---------- */
+const TITLES = {
+  home:      ['Overview', 'how RozBazaar is doing right now'],
+  launch:    ['Launch readiness', 'what still blocks a real order'],
+  bookings:  ['Bookings', 'every order, newest first'],
+  vendors:   ['Vendors', 'approve, track and fix'],
+  products:  ['Products', 'items vendors submitted, waiting on you'],
+  customers: ['Customers', 'who has signed up'],
+  areas:     ['Areas', 'villages, coordinates and coverage'],
+  traffic:   ['Traffic', 'how many people are visiting']
+};
+function go(v) {
+  VIEW = v;
+  document.querySelectorAll('.scr').forEach(x => x.classList.remove('on'));
+  document.getElementById('v-' + v).classList.add('on');
+  document.querySelectorAll('.nav[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  document.getElementById('pgTitle').textContent = TITLES[v][0];
+  document.getElementById('pgSub').textContent = TITLES[v][1];
+  window.scrollTo(0, 0); render();
+}
+function render() {
+  if (!D || !D.readiness) {                       /* snapshot not in yet */
+    const el = document.getElementById('v-' + VIEW);
+    if (el && !el.innerHTML.trim())
+      el.innerHTML = '<div class="card"><div class="sk" style="height:70px"></div></div>';
+    return;
+  }
+  ({ home: vHome, launch: vLaunch, bookings: vBookings, vendors: vVendors,
+     products: vProducts, customers: vCustomers, areas: vAreas, traffic: vTraffic }[VIEW] || vHome)();
+}
+const banner = () => D.source === 'mock'
+  ? `<div class="banner"><b>Mock data.</b> Nothing here touches your Supabase project.
+     Set <code>USE_SUPABASE=true</code> in <code>.env</code> with a service-role key to go live.</div>` : '';
+
+function kpi(lb, nm, dt, cls) {
+  return `<div class="card kpi ${cls || ''}"><div class="lb">${lb}</div>
+    <div class="nm">${nm}</div><div class="dt">${dt || ''}</div></div>`;
+}
+
+/* ---------- views ---------- */
+function vHome() {
+  const o = D.ov, r = D.readiness, blocked = r.filter(x => x.state === 'no');
+  const done = r.filter(x => x.state === 'ok').length, pct = Math.round(done / r.length * 100);
+  const d = D.daily, max = Math.max(1, ...d.map(x => Number(x.sales) || 0));
+  document.getElementById('v-home').innerHTML = banner() + `
+    ${blocked.length ? `<div class="card" style="border-color:rgba(229,72,77,.45)">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div class="ring" style="--p:${pct}"><i>${pct}%</i></div>
+        <div style="min-width:200px;flex:1">
+          <div class="disp" style="font-size:19px">Not ready to launch</div>
+          <div style="font-size:13.5px;color:var(--tx2);margin-top:5px;line-height:1.55">
+            ${blocked.length} thing${blocked.length > 1 ? 's' : ''} still block${blocked.length > 1 ? '' : 's'} a real order:
+            <b style="color:var(--red)">${blocked.map(b => esc(b.t)).join(' \u00B7 ')}</b></div>
+          <button class="btn btn-g btn-sm" style="margin-top:12px" data-act="go" data-arg="launch">See what to fix \u2192</button>
+        </div></div></div>`
+      : `<div class="card" style="border-color:rgba(47,168,80,.45)">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div class="ring" style="--p:100"><i>\u2713</i></div>
+          <div><div class="disp" style="font-size:19px">Ready to take orders</div>
+          <div style="font-size:13.5px;color:var(--tx2);margin-top:4px">Every launch check passes.</div></div>
+        </div></div>`}
+
+    <div class="sec"><h2>Today</h2></div>
+    <div class="grid k4">
+      ${kpi('Bookings today', o.bookings_today, 'placed today', o.bookings_today ? 'good' : '')}
+      ${kpi('Needs attention', o.needs_attention, 'disputes / missed', o.needs_attention > 0 ? 'bad' : '')}
+      ${kpi('Vendors live', o.vendors_live, (o.vendors_pending || 0) + ' awaiting review', o.vendors_live ? 'good' : 'bad')}
+      ${kpi('Customers', o.customers_total, 'registered total', o.customers_total ? '' : 'warn')}
+    </div>
+    <div class="grid k3" style="margin-top:15px">
+      ${kpi('Completed (30d)', o.completed_30d, 'delivered & paid')}
+      ${kpi('Sales (30d)', money(o.sales_30d), 'straight to vendors')}
+      ${kpi('Waitlist', o.waitlist_open, 'asking for a vendor', o.waitlist_open > 0 ? 'warn' : '')}
+    </div>
+
+    <div class="sec"><h2>Sales, last 14 days</h2>
+      <span class="r">${money(d.reduce((s, x) => s + Number(x.sales || 0), 0))} total</span></div>
+    <div class="card"><div class="bars">
+      ${d.map(x => { const v = Number(x.sales) || 0; return `<div class="b">
+        <em>${v ? money(v).replace('\u20B9', '') : ''}</em>
+        <i style="height:${Math.max(3, Math.round(v / max * 100))}%;${v ? '' : 'background:var(--line)'}"></i>
+        <span>${String(x.d).slice(8, 10)}/${String(x.d).slice(5, 7)}</span></div>`; }).join('')}
+    </div></div>
+
+    ${D.gaps.length ? `<div class="sec"><h2>Demand with no vendor</h2>
+      <span class="r">people asking, nobody to serve them</span></div>
+      <div class="tw"><table><thead><tr><th>Area</th><th>Type</th><th>Requests</th>
+      <th>Vendors there</th><th>Latest</th></tr></thead><tbody>
+      ${D.gaps.map(g => `<tr><td><b>${esc(g.area)}</b></td><td>${esc(g.v_type)}</td>
+        <td><span class="pill p-o">${g.requests}</span></td><td>${g.vendors_there}</td>
+        <td class="mu">${when(g.latest)}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
+}
+
+function vLaunch() {
+  const r = D.readiness, done = r.filter(x => x.state === 'ok').length;
+  const pct = Math.round(done / r.length * 100);
+  document.getElementById('v-launch').innerHTML = banner() + `
+    <div class="card"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+      <div class="ring" style="--p:${pct}"><i>${pct}%</i></div>
+      <div style="flex:1;min-width:200px">
+        <div class="disp" style="font-size:20px">${done} of ${r.length} checks passing</div>
+        <div style="font-size:13.5px;color:var(--tx2);margin-top:5px">
+          Red blocks a real order. Amber is worth fixing but will not stop one.</div>
+      </div></div></div>
+    <div class="card" style="margin-top:15px">
+      ${r.map(x => `<div class="chk ${x.state}">
+        <span class="dot">${x.state === 'ok' ? '\u2713' : x.state === 'no' ? '\u2715' : '!'}</span>
+        <div style="min-width:0"><b>${esc(x.t)}</b><span>${esc(x.d)}</span></div>
+        <div class="act"><button class="btn btn-o btn-sm" data-act="go" data-arg="${x.act}">Open</button></div>
+      </div>`).join('')}
+    </div>
+    <div class="sec"><h2>Settings only you can change</h2></div>
+    <div class="card">
+      <div class="chk wa"><span class="dot">!</span><div><b>Sign-in provider</b>
+        <span>Supabase \u2192 Authentication \u2192 Providers. Enable <b>Google</b> or <b>Anonymous sign-ins</b>.
+        Until one is on, nobody can register and no booking can be created.</span></div></div>
+      <div class="chk wa"><span class="dot">!</span><div><b>Redirect URLs</b>
+        <span>Authentication \u2192 URL Configuration. Site URL plus <code>/</code> and <code>/vendor</code>.</span></div></div>
+      <div class="chk wa"><span class="dot">!</span><div><b>Leaked password protection</b>
+        <span>Authentication \u2192 Policies. One toggle.</span></div></div>
+    </div>`;
+}
+
+function stPill(s) {
+  const m = { placed:'p-b', on_the_way:'p-o', reached:'p-o', bill_final:'p-y', bill_approved:'p-y',
+    otp_verified:'p-g', paid:'p-g', delivered:'p-g', completed:'p-g',
+    cancelled:'p-m', missed:'p-r', disputed:'p-r' };
+  return `<span class="pill ${m[s] || 'p-m'}">${esc(String(s || '').replace(/_/g, ' '))}</span>`;
+}
+function vBookings() {
+  const b = D.bookings;
+  document.getElementById('v-bookings').innerHTML = banner() + (b.length ? `
+    <div class="tw"><table><thead><tr><th>Code</th><th>Customer</th><th>Area</th><th>Vendor</th>
+      <th>Slot</th><th>Status</th><th>Est</th><th>Final</th><th></th></tr></thead><tbody>
+      ${b.map(x => `<tr>
+        <td><b>${esc(x.code)}</b><div class="mu">${when(x.created_at)}</div></td>
+        <td>${esc(x.customer_name)}<div class="mu">${esc(x.customer_phone || '')}</div></td>
+        <td>${esc(x.area)}</td><td>${esc(x.vendor_name || '\u2014')}</td>
+        <td>${esc(x.booking_date)}<div class="mu">${esc(x.slot)}</div></td>
+        <td>${stPill(x.status)}</td><td>${money(x.est_total)}</td>
+        <td>${x.final_total != null ? '<b>' + money(x.final_total) + '</b>' : '\u2014'}</td>
+        <td>${['disputed','missed'].includes(x.status)
+          ? `<button class="btn btn-o btn-sm" data-act="resolve" data-arg="${x.id}">Resolve</button>` : ''}</td>
+      </tr>`).join('')}</tbody></table></div>`
+    : `<div class="empty"><div class="e">\u{1F4CB}</div><b>No bookings yet</b>
+       <p>They appear the moment a customer confirms one.</p></div>`);
+}
+async function resolveBooking(id) {
+  const r = await api('/bookings/' + id + '/resolve', {});
+  toast(r.ok ? 'Marked completed' : (r.error || 'Failed'));
+  if (r.ok) refresh();
+}
+
+function vVendors() {
+  const v = D.vendors, perf = {}; D.perf.forEach(p => perf[p.id] = p);
+  document.getElementById('v-vendors').innerHTML = banner() + `
+    <div class="card" style="margin-bottom:15px">
+      <div class="sec" style="margin:0 0 12px"><h2>Add a vendor</h2></div>
+      <div class="grid k4" style="gap:10px">
+        <div><label class="lb">Name</label><input class="fld" id="nvName" placeholder="Ramesh Kumar"></div>
+        <div><label class="lb">Phone</label><input class="fld" id="nvPhone" placeholder="9812345670" maxlength="10"></div>
+        <div><label class="lb">Type</label><select class="fld" id="nvType">
+          <option value="vegetable">Vegetables</option><option value="fruit">Fruits</option>
+          <option value="onion_potato">Pyaaz\u2013Aloo</option></select></div>
+        <div><label class="lb">Capacity / slot</label><input class="fld" id="nvCap" value="15" inputmode="numeric"></div>
+      </div>
+      <div style="margin-top:10px"><label class="lb">Areas he covers</label>
+        <div class="row" id="nvAreas">${D.areas.map(a =>
+          `<label class="pill p-m" style="cursor:pointer;padding:8px 12px">
+            <input type="checkbox" value="${esc(a.name)}" style="margin-right:6px">${esc(a.name)}</label>`).join('')}</div></div>
+      <button class="btn btn-g" style="margin-top:13px" data-act="addVendor">+ Add vendor</button>
+    </div>
+    <div class="tw"><table><thead><tr><th>Vendor</th><th>Type</th><th>Areas</th><th>Status</th>
+      <th>Login</th><th>Rating</th><th>Done</th><th>Stale prices</th><th></th></tr></thead><tbody>
+      ${v.map(x => { const p = perf[x.id] || {}; return `<tr>
+        <td><b>${esc(x.name)}</b><div class="mu">${esc(x.phone)}</div></td>
+        <td>${esc(x.v_type)}</td>
+        <td>${(x.areas_served || []).map(a => `<span class="pill p-b">${esc(a)}</span>`).join(' ') || '\u2014'}</td>
+        <td>${x.status === 'approved'
+          ? `<span class="pill ${x.is_active ? 'p-g' : 'p-m'}">${x.is_active ? 'live' : 'paused'}</span>`
+          : x.status === 'pending' ? '<span class="pill p-o">pending</span>'
+          : `<span class="pill p-r">${esc(x.status)}</span>`}</td>
+        <td>${x.can_log_in ? '<span class="pill p-g">linked</span>' : '<span class="pill p-r">not linked</span>'}</td>
+        <td>${x.avg_rating ? '\u2B50 ' + Number(x.avg_rating).toFixed(1) : '\u2014'}</td>
+        <td>${p.completed ?? 0}</td>
+        <td>${p.stale_prices ? `<span class="pill p-o">${p.stale_prices}</span>` : '0'}</td>
+        <td>${x.status === 'pending'
+          ? `<button class="btn btn-g btn-sm" data-act="review" data-arg="${x.id}" data-arg2="approved">Approve</button>
+             <button class="btn btn-r btn-sm" data-act="review" data-arg="${x.id}" data-arg2="rejected">Reject</button>` : ''}</td>
+      </tr>`; }).join('')}</tbody></table></div>`;
+}
+async function addVendor() {
+  const name = document.getElementById('nvName').value.trim();
+  const phone = document.getElementById('nvPhone').value.trim();
+  const type = document.getElementById('nvType').value;
+  const capacity = parseInt(document.getElementById('nvCap').value, 10) || 15;
+  const areas = [...document.querySelectorAll('#nvAreas input:checked')].map(i => i.value);
+  if (name.length < 2) return toast('Enter the vendor name');
+  if (!/^\d{10}$/.test(phone)) return toast('Enter a 10-digit phone number');
+  if (!areas.length) return toast('Pick at least one area');
+  const r = await api('/vendors', { name, phone, type, areas, capacity });
+  toast(r.ok ? ('Added ' + name) : (r.error || 'Could not add'));
+  if (r.ok) refresh();
+}
+async function reviewVendor(id, decision) {
+  const r = await api('/vendors/' + id + '/review', { decision });
+  toast(r.ok ? ('Vendor ' + decision) : (r.error || 'Failed'));
+  if (r.ok) refresh();
+}
+
+function vCustomers() {
+  const c = D.customers;
+  /* Same phone number under different logins (Google account switch,
+     anonymous session, etc.) creates separate rows — worth flagging
+     rather than hiding, since it affects who a vendor actually calls. */
+  const phoneCounts = {};
+  c.forEach(x => { const p = (x.phone||'').trim(); if(p) phoneCounts[p] = (phoneCounts[p]||0)+1; });
+  const dupPhones = new Set(Object.keys(phoneCounts).filter(p => phoneCounts[p] > 1));
+
+  document.getElementById('v-customers').innerHTML = banner() + (c.length ? `
+    ${dupPhones.size ? `<div class="banner" style="border-color:rgba(62,123,250,.35);background:var(--blue-s)">
+      <b style="color:var(--blue)">${dupPhones.size} phone number${dupPhones.size>1?'s appear':' appears'} on multiple accounts.</b>
+      Usually a customer signed in with a different Google account, or once as a guest and once with Google.
+      Not necessarily wrong — just worth a look before you treat them as different people.</div>` : ''}
+    <div class="tw"><table><thead><tr><th>Customer</th><th>Phone</th><th>Bookings</th>
+      <th>Spent</th><th>Joined</th><th></th></tr></thead><tbody>
+      ${c.map(x => { const dup = dupPhones.has((x.phone||'').trim()); return `<tr${dup?' style="background:var(--blue-s)"':''}>
+        <td><b>${esc(x.name)}</b>${x.is_blocked ? ' <span class="pill p-r">blocked</span>' : ''}${dup ? ' <span class="pill p-b">shared number</span>' : ''}</td>
+        <td>${esc(x.phone)}</td><td>${x.bookings ?? 0}</td><td>${money(x.spent)}</td>
+        <td class="mu">${when(x.created_at)}</td>
+        <td><button class="btn btn-o btn-sm" data-act="block" data-arg="${x.id}" data-arg2="${!x.is_blocked}">
+          ${x.is_blocked ? 'Unblock' : 'Block'}</button></td>
+      </tr>`; }).join('')}</tbody></table></div>`
+    : `<div class="empty"><div class="e">👥</div><b>No customers yet</b></div>`);
+}
+async function blockCustomer(id, blocked) {
+  const r = await api('/customers/' + id + '/block', { blocked });
+  toast(r.ok ? (blocked ? 'Blocked' : 'Unblocked') : (r.error || 'Failed'));
+  if (r.ok) refresh();
+}
+
+function vAreas() {
+  document.getElementById('v-areas').innerHTML = banner() + `
+    <div class="card" style="margin-bottom:15px">
+      <div class="sec" style="margin:0 0 12px"><h2>Add a new village</h2></div>
+      <div class="row">
+        <input class="fld" id="newAreaName" placeholder="Village name" style="flex:1;min-width:180px">
+        <button class="btn btn-g" data-act="addArea">+ Add village</button>
+      </div>
+      <p style="font-size:12.5px;color:var(--mut);margin-top:10px;line-height:1.6">
+        It appears everywhere immediately — customer area picker, vendor coverage list.
+        Coordinates start approximate; pin it below once you're standing there, or once
+        enough real addresses come in from that village.</p>
+    </div>
+    <div class="tw"><table><thead><tr><th>Area</th><th>Vendors</th><th>Coordinates</th>
+      <th>Radius</th><th>Verified</th><th></th></tr></thead><tbody>
+      ${D.areas.map(x => `<tr>
+        <td><b>${esc(x.name)}</b></td>
+        <td>${x.vendor_count > 0 ? `<span class="pill p-g">${x.vendor_count}</span>` : '<span class="pill p-r">0</span>'}</td>
+        <td class="mu">${x.lat != null ? Number(x.lat).toFixed(4) + ', ' + Number(x.lng).toFixed(4) : '<span class="pill p-r">missing</span>'}</td>
+        <td>${x.radius_km ?? '\u2014'} km</td>
+        <td>${x.coords_verified ? '<span class="pill p-g">verified</span>' : '<span class="pill p-o">approximate</span>'}</td>
+        <td><button class="btn btn-o btn-sm" data-act="pin" data-arg="${esc(x.name)}">\u{1F4CD} Set from my GPS</button></td>
+      </tr>`).join('')}</tbody></table></div>
+    <p style="font-size:12.5px;color:var(--mut);margin-top:12px;line-height:1.6">
+      Approximate coordinates are safe \u2014 the customer app asks people to confirm their village
+      rather than guessing. Verifying only removes that extra tap.</p>`;
+}
+function pinHere(name) {
+  if (!navigator.geolocation) return toast('This device cannot share location');
+  toast('Reading GPS \u2014 stand in ' + name + ' for this to be right');
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const r = await api('/areas/point', { name, lat: pos.coords.latitude, lng: pos.coords.longitude });
+    toast(r.ok ? (name + ' pinned and verified') : (r.error || 'Failed'));
+    if (r.ok) refresh();
+  }, () => toast('Could not read GPS'), { enableHighAccuracy: true, timeout: 10000 });
+}
+
+async function addArea() {
+  const el = document.getElementById('newAreaName');
+  const name = (el && el.value || '').trim();
+  if (!name) return toast('Enter a village name');
+  const r = await api('/areas', { name, active: true });
+  toast(r.ok ? (name + ' added') : (r.error || 'Could not add'));
+  if (r.ok) { el.value = ''; refresh(); }
+}
+
+function vProducts() {
+  const list = D.pending || [];
+  document.getElementById('v-products').innerHTML = banner() + (list.length ? `
+    <p style="font-size:13px;color:var(--tx2);margin-bottom:14px;line-height:1.6">
+      A vendor's new item is invisible to every customer until you decide here.
+      Price and stock edits on items already approved never come back through this queue —
+      only brand-new items do.</p>
+    <div class="grid k3">
+      ${list.map(p => `
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:52px;height:52px;border-radius:12px;background:var(--bg3);
+            display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;overflow:hidden">
+            ${p.image_url ? `<img src="${esc(p.image_url)}" style="width:100%;height:100%;object-fit:cover">` : '\u{1F96C}'}
+          </div>
+          <div style="min-width:0;flex:1">
+            <b style="font-size:15px;display:block">${esc(p.name)}</b>
+            <span class="mu">\u20B9${p.price} / ${esc(p.unit)} \u00B7 ${esc(p.category)}</span>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <span class="pill p-b">${esc(p.vendor_name)}</span>
+          <span class="pill p-m">${esc(p.vendor_phone || '')}</span>
+        </div>
+        <div class="row" style="margin-top:13px;gap:8px">
+          <button class="btn btn-g btn-sm" style="flex:1" data-act="reviewProduct" data-arg="${p.id}" data-arg2="approved">Approve</button>
+          <button class="btn btn-r btn-sm" style="flex:1" data-act="reviewProduct" data-arg="${p.id}" data-arg2="rejected">Reject</button>
+        </div>
+      </div>`).join('')}
+    </div>`
+    : `<div class="empty"><div class="e">\u{1F96C}</div><b>Nothing waiting</b>
+       <p>New items vendors add will show up here before customers can see them.</p></div>`);
+}
+async function reviewProduct(id, decision) {
+  const note = decision === 'rejected' ? (prompt('Optional note for the vendor (why?)') || null) : null;
+  const r = await api('/products/' + id + '/review', { decision, note });
+  toast(r.ok ? ('Product ' + decision) : (r.error || 'Failed'));
+  if (r.ok) refresh();
+}
+
+function vTraffic() {
+  const v = D.visits || { daily: [], totals: { total:0, customer:0, vendor:0, today:0 } };
+  const max = Math.max(1, ...v.daily.map(x => (x.customer||0) + (x.vendor||0)));
+  document.getElementById('v-traffic').innerHTML = banner() + `
+    <div class="grid k4">
+      ${kpi('Today', v.totals.today, 'visits so far today', v.totals.today ? 'good' : '')}
+      ${kpi('Last 30 days', v.totals.total, 'total page loads')}
+      ${kpi('Customer site', v.totals.customer, 'of the last 30 days')}
+      ${kpi('Vendor app', v.totals.vendor, 'of the last 30 days')}
+    </div>
+    <div class="sec"><h2>Visits, last 30 days</h2>
+      <span class="r">customer + vendor, stacked</span></div>
+    <div class="card"><div class="bars">
+      ${v.daily.map(x => {
+        const c = Number(x.customer)||0, ve = Number(x.vendor)||0, tot = c+ve;
+        const hC = Math.max(0, Math.round(c/max*100)), hV = Math.max(0, Math.round(ve/max*100));
+        return `<div class="b">
+          <em>${tot || ''}</em>
+          <div style="width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:100px">
+            <div style="width:100%;background:var(--blue);border-radius:0 0 0 0;height:${hV}%"></div>
+            <div style="width:100%;background:var(--g);border-radius:6px 6px 0 0;height:${hC}%"></div>
+          </div>
+          <span>${String(x.d).slice(8,10)}/${String(x.d).slice(5,7)}</span>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="row" style="margin-top:16px;gap:18px;font-size:12.5px;font-weight:700;color:var(--tx2)">
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--g);border-radius:3px;margin-right:6px"></span>Customer site</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--blue);border-radius:3px;margin-right:6px"></span>Vendor app</span>
+    </div></div>
+    <p style="font-size:12.5px;color:var(--mut);margin-top:12px;line-height:1.6">
+      Counts a page load, nothing else \u2014 no cookies, no IP, no personal data stored.</p>`;
+}
+
+window.addEventListener('DOMContentLoaded', boot);
+
+/* ============================================================
+   Event delegation. The CSP is script-src 'self' with no
+   'unsafe-inline', so inline onclick= is blocked by design —
+   every action is routed from here instead.
+   ============================================================ */
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const a = el.dataset.arg, a2 = el.dataset.arg2;
+  switch (el.dataset.act) {
+    case 'go':        go(a); break;
+    case 'refresh':   refresh(); break;
+    case 'login':     doLogin(); break;
+    case 'logout':    doLogout(); break;
+    case 'addVendor': addVendor(); break;
+    case 'resolve':   resolveBooking(a); break;
+    case 'review':    reviewVendor(a, a2); break;
+    case 'block':     blockCustomer(a, a2 === 'true'); break;
+    case 'pin':       pinHere(a); break;
+    case 'addArea':      addArea(); break;
+    case 'reviewProduct': reviewProduct(a, a2); break;
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.matches('[data-enter="login"]')) doLogin();
+});
