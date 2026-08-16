@@ -283,22 +283,14 @@ function vLaunch() {
   const pct = Math.round(done / r.length * 100);
   document.getElementById('v-launch').innerHTML = banner() + `
     <div class="card"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
-    <div class="ring" style="--p:${pct}"><i>${pct}%</i></div>
+      <div class="ring" style="--p:${pct}"><i>${pct}%</i></div>
       <div style="flex:1;min-width:200px">
         <div class="disp" style="font-size:20px">${done} of ${r.length} checks passing</div>
         <div style="font-size:13.5px;color:var(--tx2);margin-top:5px">
           Red blocks a real order. Amber is worth fixing but will not stop one.</div>
       </div></div></div>
     <div class="card" style="margin-top:15px">
-      ${r.map(x => `<div class="chk ${x.state}">
-        <span class="dot">${x.state === 'ok' ? '\u2713' : x.state === 'no' ? '\u2715' : '!'}</span>
-        <div style="min-width:0"><b>${esc(x.t)}</b><span>${esc(x.d)}</span></div>
-        <div class="act"><button class="btn btn-o btn-sm" data-act="go" data-arg="${x.act}">Open</button></div>
-      </div>`).join('')}
-    </div>
-    <div class="sec"><h2>Settings only you can change</h2></div>
-    <div class="card">
-      <div class="chk wa"><span class="dot">!</span><div><b>Sign-in provider</b>
+    <div class="chk wa"><span class="dot">!</span><div><b>Sign-in provider</b>
         <span>Supabase \u2192 Authentication \u2192 Providers. Enable <b>Google</b> or <b>Anonymous sign-ins</b>.
         Until one is on, nobody can register and no booking can be created.</span></div></div>
       <div class="chk wa"><span class="dot">!</span><div><b>Redirect URLs</b>
@@ -366,15 +358,35 @@ function vVendors() {
         <td>${x.status === 'approved'
           ? `<span class="pill ${x.is_active ? 'p-g' : 'p-m'}">${x.is_active ? 'live' : 'paused'}</span>`
           : x.status === 'pending' ? '<span class="pill p-o">pending</span>'
+          : x.status === 'suspended' ? '<span class="pill p-o">blocked</span>'
           : `<span class="pill p-r">${esc(x.status)}</span>`}</td>
         <td>${x.can_log_in ? '<span class="pill p-g">linked</span>' : '<span class="pill p-r">not linked</span>'}</td>
         <td>${x.avg_rating ? '\u2B50 ' + Number(x.avg_rating).toFixed(1) : '\u2014'}</td>
         <td>${p.completed ?? 0}</td>
         <td>${p.stale_prices ? `<span class="pill p-o">${p.stale_prices}</span>` : '0'}</td>
-        <td>${x.status === 'pending'
-          ? `<button class="btn btn-g btn-sm" data-act="review" data-arg="${x.id}" data-arg2="approved">Approve</button>
-             <button class="btn btn-r btn-sm" data-act="review" data-arg="${x.id}" data-arg2="rejected">Reject</button>` : ''}</td>
+        <td>${vendorActions(x)}</td>
       </tr>`; }).join('')}</tbody></table></div>`;
+}
+/* Every action a vendor's row can offer, based on current status.
+   Block/unblock and remove call the SAME admin_review_vendor RPC
+   that approve/reject already use — 'suspended' deactivates without
+   deleting anything, 'rejected' does the same but is meant as final.
+   Both auto-cancel that vendor's upcoming bookings and notify them —
+   that logic already lives in the database, not here. */
+function vendorActions(x) {
+  if (x.status === 'pending') {
+    return `<button class="btn btn-g btn-sm" data-act="review" data-arg="${x.id}" data-arg2="approved">Approve</button>
+      <button class="btn btn-r btn-sm" data-act="review" data-arg="${x.id}" data-arg2="rejected">Reject</button>`;
+  }
+  if (x.status === 'approved' && x.is_active) {
+    return `<button class="btn btn-o btn-sm" data-act="review" data-arg="${x.id}" data-arg2="suspended">Block</button>
+      <button class="btn btn-r btn-sm" data-act="removeVendor" data-arg="${x.id}" data-arg2="${esc(x.name)}">Remove</button>`;
+  }
+  if (x.status === 'suspended') {
+    return `<button class="btn btn-g btn-sm" data-act="review" data-arg="${x.id}" data-arg2="approved">Unblock</button>
+      <button class="btn btn-r btn-sm" data-act="removeVendor" data-arg="${x.id}" data-arg2="${esc(x.name)}">Remove</button>`;
+  }
+  return '';                                       /* already rejected/removed — nothing left to do */
 }
 async function addVendor() {
   const name = document.getElementById('nvName').value.trim();
@@ -392,6 +404,12 @@ async function addVendor() {
 async function reviewVendor(id, decision) {
   const r = await api('/vendors/' + id + '/review', { decision });
   toast(r.ok ? ('Vendor ' + decision) : (r.error || 'Failed'));
+  if (r.ok) refresh();
+}
+async function removeVendor(id, name) {
+  if (!confirm(`Remove ${name}? Their upcoming bookings will be cancelled and they'll be notified. This can be undone by re-approving them later if needed.`)) return;
+  const r = await api('/vendors/' + id + '/review', { decision: 'rejected' });
+  toast(r.ok ? (name + ' removed') : (r.error || 'Failed'));
   if (r.ok) refresh();
 }
 
@@ -559,6 +577,7 @@ document.addEventListener('click', e => {
     case 'addVendor': addVendor(); break;
     case 'resolve':   resolveBooking(a); break;
     case 'review':    reviewVendor(a, a2); break;
+    case 'removeVendor': removeVendor(a, a2); break;
     case 'block':     blockCustomer(a, a2 === 'true'); break;
     case 'pin':       pinHere(a); break;
     case 'addArea':      addArea(); break;
