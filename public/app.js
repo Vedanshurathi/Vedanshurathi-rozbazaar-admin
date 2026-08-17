@@ -430,11 +430,11 @@ function vCustomers() {
       <b style="color:var(--blue)">${dupPhones.size} phone number${dupPhones.size>1?'s appear':' appears'} on multiple accounts.</b>
       Usually a customer signed in with a different Google account, or once as a guest and once with Google.
       Not necessarily wrong — just worth a look before you treat them as different people.</div>` : ''}
-    <div class="tw"><table><thead><tr><th>Customer</th><th>Phone</th><th>Bookings</th>
+    <div class="tw"><table><thead><tr><th>Customer</th><th>Phone</th><th>Email</th><th>Bookings</th>
       <th>Spent</th><th>Joined</th><th></th></tr></thead><tbody>
       ${c.map(x => { const dup = dupPhones.has((x.phone||'').trim()); return `<tr${dup?' style="background:var(--blue-s)"':''}>
         <td><b>${esc(x.name)}</b>${x.is_blocked ? ' <span class="pill p-r">blocked</span>' : ''}${dup ? ' <span class="pill p-b">shared number</span>' : ''}</td>
-        <td>${esc(x.phone)}</td><td>${x.bookings ?? 0}</td><td>${money(x.spent)}</td>
+        <td>${esc(x.phone)}</td><td class="mu">${esc(x.email || '\u2014')}</td><td>${x.bookings ?? 0}</td><td>${money(x.spent)}</td>
         <td class="mu">${when(x.created_at)}</td>
         <td><button class="btn btn-o btn-sm" data-act="block" data-arg="${x.id}" data-arg2="${!x.is_blocked}">
           ${x.is_blocked ? 'Unblock' : 'Block'}</button></td>
